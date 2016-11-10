@@ -1,0 +1,20 @@
+[package]
+name = "rust-miner"
+version = "0.0.1"
+authors = ["Patryk Ozga <patryk.ozga@outlook.com>"]
+build = "build.rs"
+
+[build-dependencies]
+gcc = "0.3"
+
+[dependencies]
+byteorder = "0.5.3"
+glob = "0.2.11"
+libc = "0.2.17"
+regex = "0.1.80"
+rustc-serialize = "0.3.19"
+num-bigint = "0.1.35"
+
+[dependencies.hyper]
+version = "0.9.11"
+default-features = false

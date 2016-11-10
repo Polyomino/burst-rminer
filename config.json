@@ -1,0 +1,7 @@
+{
+    "pool_url": "http://pool.purst-team.us",
+    "plot_folders": [
+        "C:\\Users\\Patryk\\Workspace\\rust-miner\\plots"
+    ],
+    "threads_per_folder": 2
+}
