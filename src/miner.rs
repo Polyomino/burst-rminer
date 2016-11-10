@@ -11,6 +11,7 @@ use std::io::SeekFrom;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 use sph_shabal;
 
 pub struct Miner {
@@ -36,11 +37,12 @@ pub fn mine(result_sender: Sender<MinerResult>,
             signature_recv: Receiver<MinerWork>,
             plots: Vec<Plot>) {
     loop {
-        println!("start mine loop");
+        //println!("start mine loop");
         let miner_work = signature_recv.recv().unwrap();
 
         let mut hasher = miner_work.hasher;
         let scoop_num = miner_work.scoop_num;
+        let start_time = Instant::now(); 
 
         let mut best_nonce: Option<u64> = None;
         let mut best_account_id: Option<u64> = None;
@@ -76,7 +78,7 @@ pub fn mine(result_sender: Sender<MinerResult>,
                     best_hash = match best_hash {
                         Some(hash) => {
                             if test_num < hash {
-                                println!("nonce: {} hash: {}", nonce, hash);
+                                //println!("nonce: {} hash: {}", nonce, hash);
                                 // println!("{}",
                                 //          long_time::from_seconds(&test_num /
                                 //                                  mining_info.base_target.unwrap()));
@@ -96,8 +98,8 @@ pub fn mine(result_sender: Sender<MinerResult>,
                     nonce += 1;
                 }
             }
-            println!("plot done");
         }
+        println!("finished in {:?}", Instant::now() - start_time);
         result_sender.send(MinerResult {
                 account_id: best_account_id.unwrap(),
                 hash: best_hash.unwrap(),
