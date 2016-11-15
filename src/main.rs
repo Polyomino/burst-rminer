@@ -6,7 +6,6 @@ extern crate hyper;
 
 mod config;
 mod constants;
-mod long_time;
 mod miner;
 mod plots;
 mod pool;
