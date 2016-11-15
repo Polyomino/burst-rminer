@@ -11,7 +11,7 @@ use std::io::SeekFrom;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use sph_shabal;
 
 pub struct Miner {
@@ -72,16 +72,9 @@ pub fn mine(result_sender: Sender<MinerResult>,
                     let mut hash_cur = Cursor::new(&outhash[0..8]);
                     let test_num = hash_cur.read_u64::<LittleEndian>().unwrap();
                     // let test_num = BigUint::from_bytes_le(&outhash);
-                    // println!("num sec: {}", &test_num);
-                    // println!("num sec/difficuly: {}",
-                    //          &test_num / BigUint::from(mining_info.base_target.unwrap()));
-                    best_hash = match best_hash {
+                     best_hash = match best_hash {
                         Some(hash) => {
-                            if test_num < hash {
-                                //println!("nonce: {} hash: {}", nonce, hash);
-                                // println!("{}",
-                                //          long_time::from_seconds(&test_num /
-                                //                                  mining_info.base_target.unwrap()));
+                            if test_num < hash {                     mining_info.base_target.unwrap()));
                                 best_nonce = Some(nonce);
                                 best_account_id = Some(plot.account_id);
                                 Some(test_num)

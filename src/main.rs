@@ -11,17 +11,12 @@ mod plots;
 mod pool;
 mod sph_shabal;
 
-use byteorder::*;
-use constants::*;
 use miner::MinerResult;
 use regex::Regex;
 use rustc_serialize::json;
-use rustc_serialize::hex::FromHex;
-use rustc_serialize::hex::ToHex;
 use std::cmp::Ordering;
 use std::env;
 use std::fs::File;
-use std::io::Cursor;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
@@ -51,25 +46,11 @@ fn main() {
 
     config_file.read_to_string(&mut data).unwrap();
     let miner_config = json::decode::<config::MinerConfiguration>(&data).unwrap();
-    // println!("found config!");
-    // println!("pool_url: {:?}", miner_config.pool_url);
-    // println!("plot_folders: {:?}", miner_config.plot_folders);
+    println!("found config!");
+    println!("pool_url: {:?}", miner_config.pool_url);
+    println!("plot_folders: {:?}", miner_config.plot_folders);
 
     let plot_folders = plots::get_plots(miner_config.plot_folders.unwrap());
-
-    // for folder in &plot_folders.folders {
-    //     // println!("folder name {:?}", folder.path);
-    //     for file in &folder.plots {
-    //         // println!("file: {:?}", file.path);
-    //         // println!("account_id: {}", file.account_id);
-    //         // println!("start_nonce: {}", file.start_nonce);
-    //     }
-    // }
-    // read_file(&plot_folders.folders[0].plots[0].path);
-
-    // let mut input: [u64; 2] = [0x9EAEA6EE9400A3D3, 0x0000000000000000];
-    // let plot = generate_plot(input);
-
 
     let (result_sender, result_recv) = channel();
     let mut miners = Vec::new();
@@ -131,22 +112,3 @@ fn main() {
 fn usage() {
     println!("rust-miner [-config={{ path_to_config }}");
 }
-
-// fn read_file(path: &PathBuf) -> Result<(), std::io::Error> {
-//     let file = try!(File::open(path));
-//     let mut reader = BufReader::new(file);
-//     let mut buffer = [0u8; 32];
-//     let i = 5;
-//     for x in 0..i {
-//         match reader.read(&mut buffer) {
-//             Ok(size) => {
-//                 if size < 32 {
-//                     return Err(std::io::Error::new(std::io::ErrorKind::Other, "oh no"));
-//                 }
-//             }
-//             Err(out) => return Err(out),
-//         }
-//     }
-//     println!("read file");//offset:{} {:?}",i, buffer);
-//     Ok(())
-// }

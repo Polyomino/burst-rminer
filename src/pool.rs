@@ -39,8 +39,6 @@ pub fn poll_pool(miners: Vec<miner::Miner>) -> () {
         let mining_info = res.unwrap();
 
         let signature = mining_info.generation_signature.as_ref().unwrap();
-        //println!("old_sig: {:?}", old_signature);
-        //println!("new_sig: {}", signature);
         old_signature = match old_signature {
             Some(ref old_sig) if old_sig != signature => Some(signature.clone()),
             None => Some(signature.clone()),
@@ -92,7 +90,7 @@ pub fn poll_pool(miners: Vec<miner::Miner>) -> () {
                 hasher: hasher,
                 scoop_num: scoop_num,
                 height: mining_info.height.unwrap(),
-            });
+            }).unwrap();
         }
         thread::sleep(Duration::from_secs(5));
     }
