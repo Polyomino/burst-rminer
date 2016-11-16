@@ -37,12 +37,12 @@ pub fn mine(result_sender: Sender<MinerResult>,
             signature_recv: Receiver<MinerWork>,
             plots: Vec<Plot>) {
     loop {
-        //println!("start mine loop");
+        // println!("start mine loop");
         let miner_work = signature_recv.recv().unwrap();
 
         let mut hasher = miner_work.hasher;
         let scoop_num = miner_work.scoop_num;
-        let start_time = Instant::now(); 
+        let start_time = Instant::now();
 
         let mut best_nonce: Option<u64> = None;
         let mut best_account_id: Option<u64> = None;
@@ -72,16 +72,13 @@ pub fn mine(result_sender: Sender<MinerResult>,
                     let mut hash_cur = Cursor::new(&outhash[0..8]);
                     let test_num = hash_cur.read_u64::<LittleEndian>().unwrap();
                     // let test_num = BigUint::from_bytes_le(&outhash);
-                     best_hash = match best_hash {
-                        Some(hash) => {
-                            if test_num < hash {                     mining_info.base_target.unwrap()));
-                                best_nonce = Some(nonce);
-                                best_account_id = Some(plot.account_id);
-                                Some(test_num)
-                            } else {
-                                Some(hash)
-                            }
+                    best_hash = match best_hash {
+                        Some(hash) if test_num < hash => {
+                            best_nonce = Some(nonce);
+                            best_account_id = Some(plot.account_id);
+                            Some(test_num)
                         }
+                        Some(_) => best_hash,
                         None => {
                             best_nonce = Some(nonce);
                             best_account_id = Some(plot.account_id);

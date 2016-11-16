@@ -91,14 +91,8 @@ fn main() {
             result_count = 0;
         }
         best_result = match best_result {
-            Some(x) => {
-                if x.hash < result.hash {
-                    Some(x)
-                } else {
-                    Some(result)
-                }
-            }
-            None => Some(result),
+            Some(x) if x.hash < result.hash => Some(x),
+            _ => Some(result),
         };
         result_count += 1;
         if result_count >= thread_count {

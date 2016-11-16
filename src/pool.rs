@@ -45,7 +45,7 @@ pub fn poll_pool(miners: Vec<miner::Miner>) -> () {
             _ => {
                 thread::sleep(Duration::from_secs(5));
                 continue;
-                //old_signature
+                // old_signature
             }
         };
 
@@ -86,11 +86,13 @@ pub fn poll_pool(miners: Vec<miner::Miner>) -> () {
         println!("hasher: {:?}", &hasher.to_hex());
 
         for miner in &miners {
-            miner.work_sender.send(miner::MinerWork {
-                hasher: hasher,
-                scoop_num: scoop_num,
-                height: mining_info.height.unwrap(),
-            }).unwrap();
+            miner.work_sender
+                .send(miner::MinerWork {
+                    hasher: hasher,
+                    scoop_num: scoop_num,
+                    height: mining_info.height.unwrap(),
+                })
+                .unwrap();
         }
         thread::sleep(Duration::from_secs(5));
     }
@@ -98,14 +100,14 @@ pub fn poll_pool(miners: Vec<miner::Miner>) -> () {
 
 fn get_mining_info() -> Result<MiningInfo, Error> {
     let client = Client::new();
-    let mut res =
-        try!(client.get("http://pool.burst-team.us/burst?requestType=getMiningInfo").send());
+    let mut res = try!(client.get("http://pool.burst-team.us/burst?requestType=getMiningInfo")
+        .send());
     assert_eq!(res.status, hyper::Ok);
     let mut response = String::new();
     res.read_to_string(&mut response).unwrap();
     let json = Json::from_str(response.as_str()).unwrap();
     let json_obj = json.as_object().unwrap();
-    //println!("{:?}", response);
+    // println!("{:?}", response);
     Ok(MiningInfo {
         generation_signature: Some(json_obj.get("generationSignature")
             .unwrap()
