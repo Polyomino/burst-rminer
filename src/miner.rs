@@ -62,10 +62,11 @@ pub fn mine(result_sender: Sender<MinerResult>,
                 let cur_offset = (HASH_CAP as u64) * 2 * stagger * plot.stagger_size + offset;
                 reader.seek(SeekFrom::Start(cur_offset)).unwrap();
                 for _nonce_in_stagger in 0..plot.stagger_size {
-                    if let Err(err) = ßreader.read_exact(&mut hasher[32..(32 + HASH_SIZE * 2)]) {
+                    if let Err(err) = reader.read_exact(&mut hasher[32..(32 + HASH_SIZE * 2)]) {
                         println!("error reading file {:?}: {:?}", &plot.path, err);
                         break;
                     }
+                    
                     // println!("nonce: {}, offset:{}, hasher: {:?}",
                     //          nonce,
                     //          cur_offset,
