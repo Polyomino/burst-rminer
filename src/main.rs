@@ -55,25 +55,21 @@ fn main() {
     let (result_sender, result_recv) = channel();
     let mut miners = Vec::new();
     for folder in &plot_folders.folders {
-        let plots = &folder.plots;
-        let threads_per_folder = miner_config.threads_per_folder.unwrap() as usize;
-        let mut plots_per_thread = plots.len() / threads_per_folder;
-        let plots_per_thread_rem = plots.len() % threads_per_folder;
-        if plots_per_thread_rem != 0 {
-            plots_per_thread += 1;
-        }
-        for plots_chunk in plots.chunks(plots_per_thread) {
-            let plots_vec = plots_chunk.to_vec();
-            let (signature_sender, signature_recv) = channel();
-            let result_sender = result_sender.clone();
-            miners.push(miner::Miner {
-                thread: thread::spawn::<_, i32>(move || {
-                    miner::mine(result_sender, signature_recv, plots_vec);
-                    0
-                }),
-                work_sender: signature_sender,
-            })
-        }
+        let plots = folder.plots.clone();
+        let threads_per_folder = miner_config.threads_per_folder.unwrap();
+
+        let (signature_sender, signature_recv) = channel();
+        let result_sender = result_sender.clone();
+        miners.push(miner::Miner {
+            thread: thread::spawn::<_, i32>(move || {
+                miner::mine(result_sender,
+                            signature_recv,
+                            plots,
+                            threads_per_folder as u64);
+                0
+            }),
+            work_sender: signature_sender,
+        })
     }
 
     thread::spawn(|| pool::poll_pool(miners));
