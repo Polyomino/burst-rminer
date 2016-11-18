@@ -1,15 +1,9 @@
-use byteorder::ReadBytesExt;
-use byteorder::LittleEndian;
+use byteorder::{ReadBytesExt,LittleEndian};
 use constants::*;
 use plots::Plot;
 use std::fs::File;
-use std::io::Cursor;
-use std::io::Read;
-use std::io::BufReader;
-use std::io::Seek;
-use std::io::SeekFrom;
-use std::sync::mpsc::Receiver;
-use std::sync::mpsc::Sender;
+use std::io::{Cursor, Read, BufReader, Seek, SeekFrom};
+use std::sync::mpsc::{Receiver,Sender};
 use std::thread::JoinHandle;
 use std::time::Instant;
 use sph_shabal;
@@ -66,7 +60,7 @@ pub fn mine(result_sender: Sender<MinerResult>,
                         println!("error reading file {:?}: {:?}", &plot.path, err);
                         break;
                     }
-                    
+
                     // println!("nonce: {}, offset:{}, hasher: {:?}",
                     //          nonce,
                     //          cur_offset,
