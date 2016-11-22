@@ -3,6 +3,7 @@ extern crate regex;
 extern crate rustc_serialize;
 extern crate libc;
 extern crate hyper;
+extern crate memmap;
 
 mod config;
 mod constants;

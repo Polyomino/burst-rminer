@@ -2,12 +2,13 @@ use byteorder::{ReadBytesExt, LittleEndian};
 use constants::*;
 use plots::Plot;
 use std::fs::File;
-use std::io::{Cursor, Read, BufReader, Seek, SeekFrom};
+use std::io::{Cursor, Write};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Instant;
 use sph_shabal;
+use memmap::{Mmap, Protection};
 
 pub struct Miner {
     pub thread: JoinHandle<i32>,
@@ -59,24 +60,30 @@ pub fn mine(result_sender: Sender<MinerResult>,
         let scoop_num = miner_work.scoop_num;
         let start_time = Instant::now();
 
+
         for plot in &plots {
             println!("read file: {:?}", &plot.path);
-            let file = File::open(&plot.path).unwrap();
-            let mut reader = BufReader::new(file);
 
-            let offset = plot.stagger_size * (scoop_num as u64) * (HASH_SIZE as u64) * 2;
+            let scoop_offset = plot.stagger_size as usize * scoop_num as usize * HASH_SIZE * 2;
 
             let mut nonce = plot.start_nonce;
 
             let stagger_count = plot.nonce_count / plot.stagger_size;
+
+            let file = File::open(&plot.path).unwrap();
             for stagger in 0..stagger_count {
-                let cur_offset = (HASH_CAP as u64) * 2 * stagger * plot.stagger_size + offset;
-                reader.seek(SeekFrom::Start(cur_offset)).unwrap();
-                for _nonce_in_stagger in 0..plot.stagger_size {
-                    if let Err(err) = reader.read_exact(&mut hasher[32..(32 + HASH_SIZE * 2)]) {
-                        println!("error reading file {:?}: {:?}", &plot.path, err);
-                        break;
-                    }
+                let stagger_offset = HASH_CAP * stagger as usize * 2 * plot.stagger_size as usize + scoop_offset;
+                let mmap_stagger = Mmap::open_with_offset(&file,
+                                                  Protection::Read,
+                                                  stagger_offset,
+                                                  plot.stagger_size as usize * HASH_SIZE * 2).unwrap();
+                let buf = unsafe { mmap_stagger.as_slice() };
+                for nonce_in_stagger in 0..plot.stagger_size {
+                    (& mut hasher[32..(32 + HASH_SIZE * 2)])
+                        .write(&buf[nonce_in_stagger as usize * HASH_SIZE * 2..(nonce_in_stagger as usize + 1) *
+                                                                     HASH_SIZE *
+                                                                     2])
+                        .unwrap();
                     hashers[(nonce % threads_per_folder) as usize]
                         .send(HasherWork {
                             hasher: hasher,
