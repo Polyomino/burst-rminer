@@ -126,7 +126,7 @@ fn hashulator(result_sender: Sender<MinerResult>,
         let outhash = sph_shabal::shabal256(&work.hasher);
         let mut hash_cur = Cursor::new(&outhash[0..8]);
         let test_num = hash_cur.read_u64::<LittleEndian>().unwrap();
-        println!("hash: {} nonce: {}", test_num, work.nonce);
+        //println!("hash: {} nonce: {}", test_num, work.nonce);
         best_hash = match best_hash {
             Some(hash) if test_num < hash => {
                 best_nonce = Some(work.nonce);
