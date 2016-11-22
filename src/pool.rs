@@ -4,13 +4,12 @@ use byteorder::*;
 use constants::*;
 use libc;
 use rustc_serialize::json::Json;
-use rustc_serialize::hex::FromHex;
-use rustc_serialize::hex::ToHex;
+use rustc_serialize::hex::{FromHex, ToHex};
 use hyper;
 use hyper::client::Client;
 use hyper::error::Error;
 use hyper::client::IntoUrl;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use std::io::Read;
@@ -18,6 +17,7 @@ use std::io::Cursor;
 use sph_shabal;
 use miner;
 
+#[derive(Clone)]
 pub struct Pool {
     pub base_target: Option<u64>,
 }
@@ -31,19 +31,17 @@ struct MiningInfo {
     target_deadline: Option<i64>,
 }
 
-pub fn new(miners: Vec<miner::Miner>) -> Arc<Pool> {
-    let shared_pool = Arc::new(Pool { base_target: None });
-    let mut child_pool = shared_pool.clone();
-    thread::spawn(move || poll_pool(miners, &mut child_pool));
+pub fn new(miners: Vec<miner::Miner>) -> Arc<Mutex<Pool>> {
+    let shared_pool = Arc::new(Mutex::new(Pool { base_target: None }));
+    let t_pool = shared_pool.clone();
+    thread::spawn(move || poll_pool(miners, t_pool));
     return shared_pool;
 }
 
-fn poll_pool(miners: Vec<miner::Miner>, pool_arc: &mut Arc<Pool>) -> () {
+fn poll_pool(miners: Vec<miner::Miner>, pool_arc: Arc<Mutex<Pool>>) -> () {
     println!("poll pool");
     let mut old_signature: Option<String> = None;
-
-    let mut pool = Arc::get_mut(pool_arc).unwrap();
-
+    
     loop {
         let res = get_mining_info();
         if res.is_err() {
@@ -51,9 +49,9 @@ fn poll_pool(miners: Vec<miner::Miner>, pool_arc: &mut Arc<Pool>) -> () {
             continue;
         }
         let mining_info = res.unwrap();
-        
-        pool.base_target = mining_info.base_target;
-
+        {
+            pool_arc.lock().unwrap().base_target = mining_info.base_target;
+        }
         let signature = mining_info.generation_signature.as_ref().unwrap();
         old_signature = match old_signature {
             Some(ref old_sig) if old_sig != signature => Some(signature.clone()),

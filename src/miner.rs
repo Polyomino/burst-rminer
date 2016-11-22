@@ -72,11 +72,15 @@ pub fn mine(result_sender: Sender<MinerResult>,
 
             let file = File::open(&plot.path).unwrap();
             for stagger in 0..stagger_count {
-                let stagger_offset = HASH_CAP * stagger as usize * 2 * plot.stagger_size as usize + scoop_offset;
+                let stagger_offset = stagger as usize * HASH_CAP * HASH_SIZE * 2 *
+                                     plot.stagger_size as usize +
+                                     scoop_offset;
                 let mmap_stagger = Mmap::open_with_offset(&file,
-                                                  Protection::Read,
-                                                  stagger_offset,
-                                                  plot.stagger_size as usize * HASH_SIZE * 2).unwrap();
+                                                          Protection::Read,
+                                                          stagger_offset,
+                                                          plot.stagger_size as usize * HASH_SIZE *
+                                                          2)
+                    .unwrap();
                 let buf = unsafe { mmap_stagger.as_slice() };
                 for nonce_in_stagger in 0..plot.stagger_size {
                     (& mut hasher[32..(32 + HASH_SIZE * 2)])
@@ -122,6 +126,7 @@ fn hashulator(result_sender: Sender<MinerResult>,
         let outhash = sph_shabal::shabal256(&work.hasher);
         let mut hash_cur = Cursor::new(&outhash[0..8]);
         let test_num = hash_cur.read_u64::<LittleEndian>().unwrap();
+        println!("hash: {} nonce: {}", test_num, work.nonce);
         best_hash = match best_hash {
             Some(hash) if test_num < hash => {
                 best_nonce = Some(work.nonce);

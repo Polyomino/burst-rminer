@@ -94,7 +94,11 @@ fn main() {
         };
         result_count += 1;
         if result_count >= thread_count {
-            println!("best: {:?}", Duration::from_secs(best_result.unwrap().hash/pool.base_target.unwrap()));
+            {
+                let base_target = pool.lock().unwrap().base_target.unwrap();
+                println!("base_target {}", base_target);
+                println!("best: {:?}", Duration::from_secs(best_result.unwrap().hash/base_target));
+            }
             println!("{}",
                      pool::submit_hash(best_result.unwrap().nonce,
                                        best_result.unwrap().account_id));
