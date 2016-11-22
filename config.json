@@ -1,7 +1,8 @@
 {
     "pool_url": "http://pool.purst-team.us",
     "plot_folders": [
-        "C:\\Users\\Patryk\\Workspace\\rust-miner\\plots"
+        "/Users/Patryk/Workspace/burst-rminer/plots"
     ],
-    "threads_per_folder": 2
+    "threads_per_folder": 2,
+    "plot_buffer_size": 262144
 }
