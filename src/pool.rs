@@ -10,12 +10,17 @@ use hyper;
 use hyper::client::Client;
 use hyper::error::Error;
 use hyper::client::IntoUrl;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use std::io::Read;
 use std::io::Cursor;
 use sph_shabal;
 use miner;
+
+pub struct Pool {
+    pub base_target: Option<u64>,
+}
 
 #[derive(Debug)]
 struct MiningInfo {
@@ -26,9 +31,18 @@ struct MiningInfo {
     target_deadline: Option<i64>,
 }
 
-pub fn poll_pool(miners: Vec<miner::Miner>) -> () {
+pub fn new(miners: Vec<miner::Miner>) -> Arc<Pool> {
+    let shared_pool = Arc::new(Pool { base_target: None });
+    let mut child_pool = shared_pool.clone();
+    thread::spawn(move || poll_pool(miners, &mut child_pool));
+    return shared_pool;
+}
+
+fn poll_pool(miners: Vec<miner::Miner>, pool_arc: &mut Arc<Pool>) -> () {
     println!("poll pool");
     let mut old_signature: Option<String> = None;
+
+    let mut pool = Arc::get_mut(pool_arc).unwrap();
 
     loop {
         let res = get_mining_info();
@@ -37,6 +51,8 @@ pub fn poll_pool(miners: Vec<miner::Miner>) -> () {
             continue;
         }
         let mining_info = res.unwrap();
+        
+        pool.base_target = mining_info.base_target;
 
         let signature = mining_info.generation_signature.as_ref().unwrap();
         old_signature = match old_signature {

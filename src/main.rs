@@ -22,6 +22,7 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
 use std::thread;
+use std::time::Duration;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -72,8 +73,8 @@ fn main() {
             work_sender: signature_sender,
         })
     }
-
-    thread::spawn(|| pool::poll_pool(miners));
+    
+    let pool = pool::new(miners);
 
     let thread_count = plot_folders.folders.len() as u32 * miner_config.threads_per_folder.unwrap();
 
@@ -93,6 +94,7 @@ fn main() {
         };
         result_count += 1;
         if result_count >= thread_count {
+            println!("best: {:?}", Duration::from_secs(best_result.unwrap().hash/pool.base_target.unwrap()));
             println!("{}",
                      pool::submit_hash(best_result.unwrap().nonce,
                                        best_result.unwrap().account_id));
