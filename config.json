@@ -3,6 +3,5 @@
     "plot_folders": [
         "/Users/Patryk/Workspace/burst-rminer/plots"
     ],
-    "threads_per_folder": 2,
     "plot_buffer_size": 262144
 }

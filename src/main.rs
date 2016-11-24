@@ -58,7 +58,6 @@ fn main() {
     let mut miners = Vec::new();
     for folder in &plot_folders.folders {
         let plots = folder.plots.clone();
-        let threads_per_folder = miner_config.threads_per_folder.unwrap();
 
         let (signature_sender, signature_recv) = channel();
         let result_sender = result_sender.clone();
@@ -66,8 +65,7 @@ fn main() {
             thread: thread::spawn::<_, i32>(move || {
                 miner::mine(result_sender,
                             signature_recv,
-                            plots,
-                            threads_per_folder as u64);
+                            plots);
                 0
             }),
             work_sender: signature_sender,
@@ -76,7 +74,7 @@ fn main() {
     
     let pool = pool::new(miners);
 
-    let thread_count = plot_folders.folders.len() as u32 * miner_config.threads_per_folder.unwrap();
+    let thread_count = plot_folders.folders.len() ;
 
     let mut height = 0;
     let mut best_result: Option<MinerResult> = None;
