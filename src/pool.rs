@@ -2,7 +2,6 @@ extern crate rustc_serialize;
 
 use byteorder::*;
 use constants::*;
-use libc;
 use rustc_serialize::json::Json;
 use rustc_serialize::hex::{FromHex, ToHex};
 use hyper;
@@ -12,8 +11,7 @@ use hyper::client::IntoUrl;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use std::io::Read;
-use std::io::Cursor;
+use std::io::{Cursor, Read, Write};
 use sph_shabal;
 use miner;
 
@@ -41,7 +39,7 @@ pub fn new(miners: Vec<miner::Miner>) -> Arc<Mutex<Pool>> {
 fn poll_pool(miners: Vec<miner::Miner>, pool_arc: Arc<Mutex<Pool>>) -> () {
     println!("poll pool");
     let mut old_signature: Option<String> = None;
-    
+
     loop {
         let res = get_mining_info();
         if res.is_err() {
@@ -73,14 +71,8 @@ fn poll_pool(miners: Vec<miner::Miner>, pool_arc: Arc<Mutex<Pool>>) -> () {
         let height = &height_vec[..];
         let mut scoop_prefix: [u8; 40] = [0; 40];
 
-        unsafe {
-            libc::memcpy(&mut scoop_prefix[0] as *mut _ as *mut libc::c_void,
-                         &sig[..] as *const _ as *const libc::c_void,
-                         32 as libc::size_t);
-            libc::memcpy(&mut scoop_prefix[32] as *mut _ as *mut libc::c_void,
-                         height as *const _ as *const libc::c_void,
-                         8 as libc::size_t);
-        }
+        (& mut scoop_prefix[0..32]).write(&sig[..]).unwrap();
+        (& mut scoop_prefix[32..40]).write(height).unwrap();
         println!("scoop prefix:    {:?}", scoop_prefix.to_hex());
 
         let scoop_prefix_shabal = sph_shabal::shabal256(&scoop_prefix);
@@ -92,11 +84,8 @@ fn poll_pool(miners: Vec<miner::Miner>, pool_arc: Arc<Mutex<Pool>>) -> () {
         println!("scoop num:       {:?}", scoop_num);
 
         let mut hasher: [u8; 32 + HASH_SIZE * 2] = [0; 32 + HASH_SIZE * 2];
-        unsafe {
-            libc::memcpy(&mut hasher as *mut _ as *mut libc::c_void,
-                         &sig[..] as *const _ as *const libc::c_void,
-                         32 as libc::size_t);
-        }
+
+        (&mut hasher[0..32]).write(&sig[..]).unwrap();
         println!("hasher: {:?}", &hasher.to_hex());
 
         for miner in &miners {
