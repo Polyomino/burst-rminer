@@ -71,8 +71,8 @@ fn poll_pool(miners: Vec<miner::Miner>, pool_arc: Arc<Mutex<Pool>>) -> () {
         let height = &height_vec[..];
         let mut scoop_prefix: [u8; 40] = [0; 40];
 
-        (& mut scoop_prefix[0..32]).write(&sig[..]).unwrap();
-        (& mut scoop_prefix[32..40]).write(height).unwrap();
+        (&mut scoop_prefix[0..32]).write(&sig[..]).unwrap();
+        (&mut scoop_prefix[32..40]).write(height).unwrap();
         println!("scoop prefix:    {:?}", scoop_prefix.to_hex());
 
         let scoop_prefix_shabal = sph_shabal::shabal256(&scoop_prefix);
