@@ -63,18 +63,16 @@ fn main() {
         let result_sender = result_sender.clone();
         miners.push(miner::Miner {
             thread: thread::spawn::<_, i32>(move || {
-                miner::mine(result_sender,
-                            signature_recv,
-                            plots);
+                miner::mine(result_sender, signature_recv, plots);
                 0
             }),
             work_sender: signature_sender,
         })
     }
-    
+
     let pool = pool::new(miners);
 
-    let thread_count = plot_folders.folders.len() ;
+    let thread_count = plot_folders.folders.len();
 
     let mut height = 0;
     let mut best_result: Option<MinerResult> = None;
@@ -95,7 +93,8 @@ fn main() {
             {
                 let base_target = pool.lock().unwrap().base_target.unwrap();
                 println!("base_target {}", base_target);
-                println!("best: {:?}", Duration::from_secs(best_result.unwrap().hash/base_target));
+                println!("best: {:?}",
+                         Duration::from_secs(best_result.unwrap().hash / base_target));
             }
             println!("{}",
                      pool::submit_hash(best_result.unwrap().nonce,
