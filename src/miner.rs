@@ -4,7 +4,7 @@ use plots::Plot;
 use std::cmp::Ordering;
 use std::fs::File;
 use std::io::{Cursor, Write};
-use std::sync::mpsc::{ Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender};
 use std::thread::JoinHandle;
 use std::time::Instant;
 use sph_shabal;
@@ -76,25 +76,27 @@ pub fn mine(result_sender: Sender<MinerResult>,
                     let mut hash_cur = Cursor::new(&outhash[0..8]);
                     let test_num = hash_cur.read_u64::<LittleEndian>().unwrap();
                     // println!("hash: {} nonce: {}", test_num, nonce);
-                    best_hash = match best_hash.cmp(&Some(test_num)) {
-                        Ordering::Greater => {
+                    best_hash = match (best_hash, Some(test_num).cmp(&best_hash)) {
+                        (None, _) |
+                        (Some(_), Ordering::Less) => {
                             best_nonce = Some(nonce);
                             best_account_id = Some(plot.account_id);
                             Some(test_num)
                         }
                         _ => best_hash,
                     };
+                    println!("{:?}", best_hash);
                     nonce += 1;
                 }
             }
         }
         result_sender.send(MinerResult {
-                    account_id: best_account_id.unwrap(),
-                    hash: best_hash.unwrap(),
-                    nonce: best_nonce.unwrap(),
-                    height: height,
-                })
-                .unwrap();
+                account_id: best_account_id.unwrap(),
+                hash: best_hash.unwrap(),
+                nonce: best_nonce.unwrap(),
+                height: height,
+            })
+            .unwrap();
         println!("finished reading in {:?}", Instant::now() - start_time);
     }
 }
