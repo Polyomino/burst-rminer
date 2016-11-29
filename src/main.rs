@@ -12,7 +12,9 @@ mod plots;
 mod pool;
 mod sph_shabal;
 
+use hyper::Url;
 use miner::MinerResult;
+use pool::Pool;
 use regex::Regex;
 use rustc_serialize::json;
 use std::cmp::Ordering;
@@ -56,21 +58,22 @@ fn main() {
 
     let (result_sender, result_recv) = channel();
     let mut miners = Vec::new();
+    let mut senders = Vec::new();
     for folder in &plot_folders.folders {
         let plots = folder.plots.clone();
 
         let (signature_sender, signature_recv) = channel();
         let result_sender = result_sender.clone();
-        miners.push(miner::Miner {
-            thread: thread::spawn::<_, i32>(move || {
+        miners.push(
+            thread::spawn::<_, i32>(move || {
                 miner::mine(result_sender, signature_recv, plots);
                 0
-            }),
-            work_sender: signature_sender,
-        })
+        }));
+        senders.push(signature_sender);
     }
 
-    let pool = pool::new(miners);
+    let pool = Pool::new(Url::parse(&miner_config.pool_url.unwrap()).unwrap(),
+                         senders);
 
     let thread_count = plot_folders.folders.len();
 
@@ -91,7 +94,7 @@ fn main() {
         result_count += 1;
         if result_count >= thread_count {
             {
-                let base_target = pool.lock().unwrap().base_target.unwrap();
+                let base_target = pool.base_target();
                 println!("base_target {}", base_target);
                 println!("best: {:?}",
                          Duration::from_secs(best_result.unwrap().hash / base_target));

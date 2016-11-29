@@ -5,20 +5,21 @@ use std::cmp::Ordering;
 use std::fs::File;
 use std::io::{Cursor, Write};
 use std::sync::mpsc::{Receiver, Sender};
-use std::thread::JoinHandle;
 use std::time::Instant;
 use sph_shabal;
 use memmap::{Mmap, Protection};
 
-pub struct Miner {
-    pub thread: JoinHandle<i32>,
-    pub work_sender: Sender<MinerWork>,
-}
-
+#[derive(Copy)]
 pub struct MinerWork {
     pub hasher: [u8; 32 + HASH_SIZE * 2],
     pub scoop_num: u16,
     pub height: u64,
+}
+
+impl Clone for MinerWork {
+    fn clone(&self) -> MinerWork {
+        *self
+    }
 }
 
 #[derive(Clone,Copy)]

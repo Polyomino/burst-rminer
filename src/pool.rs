@@ -2,138 +2,213 @@ extern crate rustc_serialize;
 
 use byteorder::*;
 use constants::*;
-use rustc_serialize::json::Json;
-use rustc_serialize::hex::{FromHex, ToHex};
+use rustc_serialize::json;
+use rustc_serialize::{Decodable, Decoder};
+use rustc_serialize::hex::{FromHex, FromHexError};
 use hyper;
+use hyper::Url;
 use hyper::client::Client;
-use hyper::error::Error;
+use hyper::error::Error as HyperError;
 use hyper::client::IntoUrl;
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{Sender, SendError};
 use std::thread;
 use std::time::Duration;
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read, Write, Error as IoError};
+use std::ops::Deref;
 use sph_shabal;
 use miner;
 
-#[derive(Clone)]
-pub struct Pool {
-    pub base_target: Option<u64>,
+#[derive(Debug, Clone)]
+struct MiningInfo {
+    pub generation_signature: String,
+    pub base_target: u64,
+    request_processing_time: i64,
+    height: u64,
+    target_deadline: i64,
+}
+
+impl Decodable for MiningInfo {
+    fn decode<D: Decoder>(d: &mut D) -> Result<MiningInfo, D::Error> {
+        // 5 is the number of elements in MiningInfo
+        d.read_struct("MiningInfo", 5, |d| {
+            let generation_signature =
+                try!(d.read_struct_field("generationSignature", 0, |d| d.read_str()));
+            let base_target = try!(d.read_struct_field("baseTarget", 1, |d| d.read_u64()));
+            let request_processing_time =
+                try!(d.read_struct_field("requestProcessingTime", 2, |d| d.read_i64()));
+            let height = try!(d.read_struct_field("height", 3, |d| d.read_u64()));
+            let target_deadline = try!(d.read_struct_field("targetDeadline", 4, |d| d.read_i64()));
+
+            Ok(MiningInfo {
+                generation_signature: generation_signature,
+                base_target: base_target,
+                request_processing_time: request_processing_time,
+                height: height,
+                target_deadline: target_deadline,
+            })
+        })
+
+
+    }
 }
 
 #[derive(Debug)]
-struct MiningInfo {
-    pub generation_signature: Option<String>,
-    pub base_target: Option<u64>,
-    request_processing_time: Option<i64>,
-    height: Option<u64>,
-    target_deadline: Option<i64>,
+enum Error {
+    FromHex(FromHexError),
+    Http(HyperError),
+    Io(IoError),
+    Parse(json::DecoderError),
+    Subscriber(SendError<miner::MinerWork>),
+    Url,
 }
 
-pub fn new(miners: Vec<miner::Miner>) -> Arc<Mutex<Pool>> {
-    let shared_pool = Arc::new(Mutex::new(Pool { base_target: None }));
-    let t_pool = shared_pool.clone();
-    thread::spawn(move || poll_pool(miners, t_pool));
-    return shared_pool;
+impl From<HyperError> for Error {
+    fn from(err: HyperError) -> Error {
+        Error::Http(err)
+    }
 }
 
-fn poll_pool(miners: Vec<miner::Miner>, pool_arc: Arc<Mutex<Pool>>) -> () {
-    println!("poll pool");
-    let mut old_signature: Option<String> = None;
+impl From<json::DecoderError> for Error {
+    fn from(err: json::DecoderError) -> Error {
+        Error::Parse(err)
+    }
+}
 
-    loop {
-        let res = get_mining_info();
-        if res.is_err() {
-            thread::sleep(Duration::from_secs(5));
-            continue;
-        }
-        let mining_info = res.unwrap();
-        {
-            pool_arc.lock().unwrap().base_target = mining_info.base_target;
-        }
-        let signature = mining_info.generation_signature.as_ref().unwrap();
-        old_signature = match old_signature {
-            Some(ref old_sig) if old_sig != signature => Some(signature.clone()),
-            None => Some(signature.clone()),
-            _ => {
-                thread::sleep(Duration::from_secs(5));
-                continue;
-                // old_signature
-            }
+impl From<IoError> for Error {
+    fn from(err: IoError) -> Error {
+        Error::Io(err)
+    }
+}
+
+impl From<FromHexError> for Error {
+    fn from(err: FromHexError) -> Error {
+        Error::FromHex(err)
+    }
+}
+
+impl From<SendError<miner::MinerWork>> for Error {
+    fn from(err: SendError<miner::MinerWork>) -> Error {
+        Error::Subscriber(err)
+    }
+}
+
+pub struct Pool {
+    url: Url,
+    mining_info: Arc<Mutex<Option<MiningInfo>>>,
+    subscribers: Arc<Mutex<Vec<Sender<miner::MinerWork>>>>,
+}
+
+impl Pool {
+    pub fn new(url: Url, miners: Vec<Sender<miner::MinerWork>>) -> Pool {
+        let pool = Pool {
+            url: url,
+            mining_info: Arc::new(Mutex::new(None)),
+            subscribers: Arc::new(Mutex::new(miners)),
         };
+        let mining_info = pool.mining_info.clone();
+        let subscribers = pool.subscribers.clone();
+        let host_url = pool.url.clone();
+        thread::spawn(move || {
+            if let Err(e) = Pool::refresh(mining_info, subscribers, host_url) {
+                println!("{:?}", e);
+            }
+            thread::sleep(Duration::from_secs(5));
+        });
+        pool
+    }
 
-        println!("{:?}", &mining_info);
+    pub fn base_target(&self) -> u64 {
+        self.mining_info.lock().unwrap().clone().unwrap().base_target
+    }
 
-        let sig = signature.from_hex().unwrap();
-        println!("arr:{:?} len:{}", &sig.to_hex(), sig.len());
+    fn query_pool(url: Url) -> Result<MiningInfo, Error> {
+        let http_client = Client::new();
+        let mut query_url = url.clone();
+        match query_url.path_segments_mut() {
+            Ok(mut path_segments) => {
+                path_segments.pop_if_empty().push("burst");
+            }
+            Err(_) => return Err(Error::Url),
+        };
+        query_url.query_pairs_mut().append_pair("requestType", "getMiningInfo");
+        let mut res = try!(http_client.get(query_url).send());
+        assert_eq!(res.status, hyper::Ok);
+        let mut response = String::new();
+        try!(res.read_to_string(&mut response));
+        let mining_info = try!(json::decode(response.as_str()));
+        Ok(mining_info)
+    }
+
+    fn refresh(mining_info: Arc<Mutex<Option<MiningInfo>>>,
+               subscribers: Arc<Mutex<Vec<Sender<miner::MinerWork>>>>,
+               url: Url)
+               -> Result<(), Error> {
+        let new_mining_info = try!(Pool::query_pool(url));
+        let new_sig = new_mining_info.generation_signature.clone();
+        match mining_info.lock() {
+            Err(_) => {
+                panic!("Mutex holding the pool state was poisoned. The main thread may have \
+                        panicked.")
+            }
+            Ok(mut mining_info_guard) => {
+                *mining_info_guard = match mining_info_guard.clone() {
+                    None => {
+                        try!(Pool::notify_subscribers(&new_mining_info, subscribers));
+                        Some(new_mining_info)
+                    }
+                    Some(ref existing_mining_info) if existing_mining_info.generation_signature !=
+                                                      new_sig => {
+                        try!(Pool::notify_subscribers(&new_mining_info, subscribers));
+                        Some(new_mining_info)
+                    }
+                    Some(existing_mining_info) => Some(existing_mining_info),
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn notify_subscribers(mining_info: &MiningInfo,
+                          subscribers: Arc<Mutex<Vec<Sender<miner::MinerWork>>>>)
+                          -> Result<(), Error> {
+        let miner_work = try!(Pool::get_miner_work(mining_info));
+        for sender in subscribers.lock().unwrap().deref() {
+            try!(sender.send(miner_work.clone()))
+        }
+        Ok(())
+    }
+
+    fn get_miner_work(mining_info: &MiningInfo) -> Result<miner::MinerWork, Error> {
+        let sig = try!(mining_info.generation_signature.from_hex());
 
         let mut height_vec = vec![];
-        height_vec.write_u64::<BigEndian>(mining_info.height.unwrap()).unwrap();
+        try!(height_vec.write_u64::<BigEndian>(mining_info.height));
         let height = &height_vec[..];
         let mut scoop_prefix: [u8; 40] = [0; 40];
 
-        (&mut scoop_prefix[0..32]).write(&sig[..]).unwrap();
-        (&mut scoop_prefix[32..40]).write(height).unwrap();
-        println!("scoop prefix:    {:?}", scoop_prefix.to_hex());
+        try!((&mut scoop_prefix[0..32]).write(&sig[..]));
+        try!((&mut scoop_prefix[32..40]).write(height));
+        // println!("scoop prefix:    {:?}", scoop_prefix.to_hex());
 
         let scoop_prefix_shabal = sph_shabal::shabal256(&scoop_prefix);
-        println!("shabaled prefix: {:?}", scoop_prefix_shabal.to_hex());
+        // println!("shabaled prefix: {:?}", scoop_prefix_shabal.to_hex());
 
         let scoop_check_arr = &scoop_prefix_shabal[30..];
         let mut cur = Cursor::new(scoop_check_arr);
         let scoop_num: u16 = cur.read_u16::<BigEndian>().unwrap() % 4096;
-        println!("scoop num:       {:?}", scoop_num);
+        // println!("scoop num:       {:?}", scoop_num);
 
         let mut hasher: [u8; 32 + HASH_SIZE * 2] = [0; 32 + HASH_SIZE * 2];
 
-        (&mut hasher[0..32]).write(&sig[..]).unwrap();
-        println!("hasher: {:?}", &hasher.to_hex());
+        try!((&mut hasher[0..32]).write(&sig[..]));
 
-        for miner in &miners {
-            miner.work_sender
-                .send(miner::MinerWork {
-                    hasher: hasher,
-                    scoop_num: scoop_num,
-                    height: mining_info.height.unwrap(),
-                })
-                .unwrap();
-        }
-        thread::sleep(Duration::from_secs(5));
+        Ok(miner::MinerWork {
+            hasher: hasher,
+            scoop_num: scoop_num,
+            height: mining_info.height,
+        })
     }
-}
-
-fn get_mining_info() -> Result<MiningInfo, Error> {
-    let client = Client::new();
-    let mut res = try!(client.get("http://pool.burst-team.us/burst?requestType=getMiningInfo")
-        .send());
-    assert_eq!(res.status, hyper::Ok);
-    let mut response = String::new();
-    res.read_to_string(&mut response).unwrap();
-    let json = Json::from_str(response.as_str()).unwrap();
-    let json_obj = json.as_object().unwrap();
-    // println!("{:?}", response);
-    Ok(MiningInfo {
-        generation_signature: Some(json_obj.get("generationSignature")
-            .unwrap()
-            .as_string()
-            .unwrap()
-            .to_string()),
-        base_target: Some(json_obj.get("baseTarget")
-            .unwrap()
-            .as_string()
-            .unwrap()
-            .to_string()
-            .parse::<u64>()
-            .unwrap()),
-        request_processing_time: json_obj.get("requestProcessingTime").unwrap().as_i64(),
-        height: Some(json_obj.get("height")
-            .unwrap()
-            .as_string()
-            .unwrap()
-            .to_string()
-            .parse::<u64>()
-            .unwrap()),
-        target_deadline: json_obj.get("targetDeadline").unwrap().as_i64(),
-    })
 }
 
 pub fn submit_hash(nonce: u64, account_id: u64) -> String {
