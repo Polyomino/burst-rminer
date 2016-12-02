@@ -25,7 +25,7 @@ struct MiningInfo {
     pub base_target: u64,
     request_processing_time: i64,
     height: u64,
-    target_deadline: i64,
+    target_deadline: u64,
 }
 
 impl Decodable for MiningInfo {
@@ -38,7 +38,7 @@ impl Decodable for MiningInfo {
             let request_processing_time =
                 try!(d.read_struct_field("requestProcessingTime", 2, |d| d.read_i64()));
             let height = try!(d.read_struct_field("height", 3, |d| d.read_u64()));
-            let target_deadline = try!(d.read_struct_field("targetDeadline", 4, |d| d.read_i64()));
+            let target_deadline = try!(d.read_struct_field("targetDeadline", 4, |d| d.read_u64()));
 
             Ok(MiningInfo {
                 generation_signature: generation_signature,
@@ -110,10 +110,14 @@ impl Pool {
         let subscribers = pool.subscribers.clone();
         let host_url = pool.url.clone();
         thread::spawn(move || {
-            if let Err(e) = Pool::refresh(mining_info, subscribers, host_url) {
-                println!("{:?}", e);
+            let mining_info = mining_info;
+            let subscribers = subscribers;
+            loop {
+                if let Err(e) = Pool::refresh(&mining_info, &subscribers, &host_url) {
+                    println!("{:?}", e);
+                }
+                thread::sleep(Duration::from_secs(5));
             }
-            thread::sleep(Duration::from_secs(5));
         });
         pool
     }
@@ -122,7 +126,7 @@ impl Pool {
         self.mining_info.lock().unwrap().clone().unwrap().base_target
     }
 
-    fn query_pool(url: Url) -> Result<MiningInfo, Error> {
+    fn query_pool(url: &Url) -> Result<MiningInfo, Error> {
         let http_client = Client::new();
         let mut query_url = url.clone();
         match query_url.path_segments_mut() {
@@ -140,9 +144,9 @@ impl Pool {
         Ok(mining_info)
     }
 
-    fn refresh(mining_info: Arc<Mutex<Option<MiningInfo>>>,
-               subscribers: Arc<Mutex<Vec<Sender<miner::MinerWork>>>>,
-               url: Url)
+    fn refresh(mining_info: &Arc<Mutex<Option<MiningInfo>>>,
+               subscribers: &Arc<Mutex<Vec<Sender<miner::MinerWork>>>>,
+               url: &Url)
                -> Result<(), Error> {
         let new_mining_info = try!(Pool::query_pool(url));
         let new_sig = new_mining_info.generation_signature.clone();
@@ -170,7 +174,7 @@ impl Pool {
     }
 
     fn notify_subscribers(mining_info: &MiningInfo,
-                          subscribers: Arc<Mutex<Vec<Sender<miner::MinerWork>>>>)
+                          subscribers: &Arc<Mutex<Vec<Sender<miner::MinerWork>>>>)
                           -> Result<(), Error> {
         let miner_work = try!(Pool::get_miner_work(mining_info));
         for sender in subscribers.lock().unwrap().deref() {
@@ -207,6 +211,7 @@ impl Pool {
             hasher: hasher,
             scoop_num: scoop_num,
             height: mining_info.height,
+            target_deadline: mining_info.target_deadline,
         })
     }
 }

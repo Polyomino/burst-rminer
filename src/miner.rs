@@ -14,6 +14,7 @@ pub struct MinerWork {
     pub hasher: [u8; 32 + HASH_SIZE * 2],
     pub scoop_num: u16,
     pub height: u64,
+    pub target_deadline: u64,
 }
 
 impl Clone for MinerWork {
@@ -86,7 +87,7 @@ pub fn mine(result_sender: Sender<MinerResult>,
                         }
                         _ => best_hash,
                     };
-                    //println!("{:?}", best_hash);
+                    // println!("{:?}", best_hash);
                     nonce += 1;
                 }
             }
