@@ -85,7 +85,7 @@ pub fn mine(result_sender: Sender<MinerResult>,
                         }
                         _ => best_hash,
                     };
-                    println!("{:?}", best_hash);
+                    //println!("{:?}", best_hash);
                     nonce += 1;
                 }
             }
