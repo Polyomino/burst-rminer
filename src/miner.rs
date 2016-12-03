@@ -1,11 +1,12 @@
 use byteorder::{ReadBytesExt, LittleEndian};
 use constants::*;
 use plots::Plot;
+use pool;
 use std::cmp::Ordering;
 use std::fs::File;
 use std::io::{Cursor, Write};
-use std::sync::mpsc::{Receiver, Sender};
-use std::time::Instant;
+use std::sync::mpsc::{Receiver, TryRecvError};
+use std::time::{Duration, Instant};
 use sph_shabal;
 use memmap::{Mmap, Protection};
 
@@ -15,6 +16,7 @@ pub struct MinerWork {
     pub scoop_num: u16,
     pub height: u64,
     pub target_deadline: u64,
+    pub base_target: u64,
 }
 
 impl Clone for MinerWork {
@@ -23,26 +25,25 @@ impl Clone for MinerWork {
     }
 }
 
-#[derive(Clone,Copy)]
-pub struct MinerResult {
-    pub nonce: u64,
-    pub account_id: u64,
-    pub hash: u64,
-    pub height: u64,
-}
-
-pub fn mine(result_sender: Sender<MinerResult>,
-            signature_recv: Receiver<MinerWork>,
+pub fn mine(signature_recv: Receiver<MinerWork>,
             plots: Vec<Plot>) {
+
+    let mut next_work: Option<MinerWork> = None;
+
     loop {
         // println!("start mine loop");
-        let miner_work = signature_recv.recv().unwrap();
+        let miner_work  = match next_work {
+            Some(t) => t,
+            None => signature_recv.recv().unwrap()
+        };
 
         let mut hasher = miner_work.hasher;
         let scoop_num = miner_work.scoop_num;
-        let height = miner_work.height;
         let start_time = Instant::now();
 
+        let deadline = miner_work.target_deadline * miner_work.base_target;
+
+        let mut nonce_count = 0;
         let mut best_nonce: Option<u64> = None;
         let mut best_account_id: Option<u64> = None;
         let mut best_hash: Option<u64> = None;
@@ -87,18 +88,43 @@ pub fn mine(result_sender: Sender<MinerResult>,
                         }
                         _ => best_hash,
                     };
+
                     // println!("{:?}", best_hash);
+                    nonce_count += 1;
                     nonce += 1;
                 }
             }
+
+            if has_new_signature(&signature_recv, &mut next_work) {
+                println!("read {} nonces in {:?}",
+                         nonce_count,
+                         Instant::now() - start_time);
+                break;
+            }
+
+            if best_hash.unwrap() < deadline {
+                println!("found nonce {} Duration: {:?}",
+                         best_nonce.unwrap(),
+                         Duration::from_secs(best_hash.unwrap() / miner_work.base_target));
+                pool::submit_hash(best_nonce.unwrap(), best_account_id.unwrap());
+
+                break;
+            }
         }
-        result_sender.send(MinerResult {
-                account_id: best_account_id.unwrap(),
-                hash: best_hash.unwrap(),
-                nonce: best_nonce.unwrap(),
-                height: height,
-            })
-            .unwrap();
         println!("finished reading in {:?}", Instant::now() - start_time);
     }
+}
+
+fn has_new_signature(recv: &Receiver<MinerWork>, next_work: &mut Option<MinerWork>) -> bool {
+    return match recv.try_recv() {
+        Ok(t) => {
+            *next_work = Some(t);
+            true
+        }
+        Err(TryRecvError::Empty) => {
+            *next_work = None;
+            false
+        }
+        Err(TryRecvError::Disconnected) => panic!("signature sender disconnected")
+    };
 }

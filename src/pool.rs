@@ -122,10 +122,6 @@ impl Pool {
         pool
     }
 
-    pub fn base_target(&self) -> u64 {
-        self.mining_info.lock().unwrap().clone().unwrap().base_target
-    }
-
     fn query_pool(url: &Url) -> Result<MiningInfo, Error> {
         let http_client = Client::new();
         let mut query_url = url.clone();
@@ -212,6 +208,7 @@ impl Pool {
             scoop_num: scoop_num,
             height: mining_info.height,
             target_deadline: mining_info.target_deadline,
+            base_target: mining_info.base_target,
         })
     }
 }

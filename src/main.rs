@@ -13,7 +13,6 @@ mod pool;
 mod sph_shabal;
 
 use hyper::Url;
-use miner::MinerResult;
 use pool::Pool;
 use regex::Regex;
 use rustc_serialize::json;
@@ -25,6 +24,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::channel;
 use std::thread;
 use std::time::Duration;
+
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -56,53 +56,23 @@ fn main() {
 
     let plot_folders = plots::get_plots(miner_config.plot_folders.unwrap());
 
-    let (result_sender, result_recv) = channel();
     let mut miners = Vec::new();
     let mut senders = Vec::new();
     for folder in &plot_folders.folders {
         let plots = folder.plots.clone();
 
         let (signature_sender, signature_recv) = channel();
-        let result_sender = result_sender.clone();
-        miners.push(
-            thread::spawn::<_, i32>(move || {
-                miner::mine(result_sender, signature_recv, plots);
-                0
+        miners.push(thread::spawn::<_, i32>(move || {
+            miner::mine(signature_recv, plots);
+            0
         }));
         senders.push(signature_sender);
     }
 
-    let pool = Pool::new(Url::parse(&miner_config.pool_url.unwrap()).unwrap(),
-                         senders);
-
-    let thread_count = plot_folders.folders.len();
-
-    let mut height = 0;
-    let mut best_result: Option<MinerResult> = None;
-
-    let mut result_count = 0;
+    Pool::new(Url::parse(&miner_config.pool_url.unwrap()).unwrap(),
+              senders);
     loop {
-        let result: MinerResult = result_recv.recv().unwrap();
-        if result.height != height {
-            height = result.height;
-            result_count = 0;
-        }
-        best_result = match best_result {
-            Some(x) if x.hash < result.hash => Some(x),
-            _ => Some(result),
-        };
-        result_count += 1;
-        if result_count >= thread_count {
-            {
-                let base_target = pool.base_target();
-                println!("base_target {}", base_target);
-                println!("best: {:?}",
-                         Duration::from_secs(best_result.unwrap().hash / base_target));
-            }
-            println!("{}",
-                     pool::submit_hash(best_result.unwrap().nonce,
-                                       best_result.unwrap().account_id));
-        }
+        thread::sleep(Duration::from_secs(10));
     }
 }
 
