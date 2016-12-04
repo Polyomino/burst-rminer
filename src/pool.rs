@@ -220,9 +220,15 @@ pub fn submit_hash(nonce: u64, account_id: u64) -> String {
                           nonce);
     println!("{}", request);
     let client = Client::new();
-    let mut res = client.get(request.into_url().unwrap()).send().unwrap();
-    // assert_eq!(res.status, hyper::Ok);
     let mut response = String::new();
+    let mut res = match client.get(request.into_url().unwrap()).send() {
+        Ok(t) => t,
+        Err(e) => {
+            println!("error submitting nonce:{:?}", e);
+            return response;
+        }
+    };
+    // assert_eq!(res.status, hyper::Ok);
     res.read_to_string(&mut response).unwrap();
     return response;
 }
