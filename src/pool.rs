@@ -114,7 +114,7 @@ impl Pool {
             let subscribers = subscribers;
             loop {
                 if let Err(e) = Pool::refresh(&mining_info, &subscribers, &host_url) {
-                    println!("{:?}", e);
+                    println!("refresh pool: {:?}", e);
                 }
                 thread::sleep(Duration::from_secs(5));
             }
