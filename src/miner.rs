@@ -25,16 +25,15 @@ impl Clone for MinerWork {
     }
 }
 
-pub fn mine(signature_recv: Receiver<MinerWork>,
-            plots: Vec<Plot>) {
+pub fn mine(signature_recv: Receiver<MinerWork>, plots: Vec<Plot>) {
 
     let mut next_work: Option<MinerWork> = None;
 
     loop {
         // println!("start mine loop");
-        let miner_work  = match next_work {
+        let miner_work = match next_work {
             Some(t) => t,
-            None => signature_recv.recv().unwrap()
+            None => signature_recv.recv().unwrap(),
         };
 
         let mut hasher = miner_work.hasher;
@@ -49,7 +48,7 @@ pub fn mine(signature_recv: Receiver<MinerWork>,
         let mut best_hash: Option<u64> = None;
 
         for plot in &plots {
-            println!("read file: {:?}", &plot.path);
+            // println!("read file: {:?}", &plot.path);
 
             let scoop_offset = plot.stagger_size as usize * scoop_num as usize * HASH_SIZE * 2;
 
@@ -106,7 +105,15 @@ pub fn mine(signature_recv: Receiver<MinerWork>,
                 println!("found nonce {} Duration: {:?}",
                          best_nonce.unwrap(),
                          Duration::from_secs(best_hash.unwrap() / miner_work.base_target));
-                pool::submit_hash(best_nonce.unwrap(), best_account_id.unwrap());
+                for i in 0..3 {
+                    match pool::submit_hash(best_nonce.unwrap(), best_account_id.unwrap()) {
+                        Ok(t) => {
+                            println!("try {} pool response: {}", i, t);
+                            break;
+                        }
+                        Err(e) => println!("try {} pool error: {:?}", i, e),
+                    };
+                }
 
                 break;
             }
@@ -125,6 +132,6 @@ fn has_new_signature(recv: &Receiver<MinerWork>, next_work: &mut Option<MinerWor
             *next_work = None;
             false
         }
-        Err(TryRecvError::Disconnected) => panic!("signature sender disconnected")
+        Err(TryRecvError::Disconnected) => panic!("signature sender disconnected"),
     };
 }

@@ -54,7 +54,7 @@ impl Decodable for MiningInfo {
 }
 
 #[derive(Debug)]
-enum Error {
+pub enum Error {
     FromHex(FromHexError),
     Http(HyperError),
     Io(IoError),
@@ -213,7 +213,7 @@ impl Pool {
     }
 }
 
-pub fn submit_hash(nonce: u64, account_id: u64) -> String {
+pub fn submit_hash(nonce: u64, account_id: u64) -> Result<String, Error> {
     let request = format!("http://pool.burst-team.\
                            us/burst?requestType=submitNonce&accountId={}&nonce={}&secretPhrase=cryptoport",
                           account_id,
@@ -221,14 +221,9 @@ pub fn submit_hash(nonce: u64, account_id: u64) -> String {
     println!("{}", request);
     let client = Client::new();
     let mut response = String::new();
-    let mut res = match client.get(request.into_url().unwrap()).send() {
-        Ok(t) => t,
-        Err(e) => {
-            println!("error submitting nonce:{:?}", e);
-            return response;
-        }
-    };
+    let mut res = try!(client.get(request.into_url().unwrap()).send());
+    
     // assert_eq!(res.status, hyper::Ok);
     res.read_to_string(&mut response).unwrap();
-    return response;
+    return Ok(response);
 }
