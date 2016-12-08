@@ -57,22 +57,18 @@ pub fn mine(signature_recv: Receiver<MinerWork>, plots: Vec<Plot>) {
             let stagger_count = plot.nonce_count / plot.stagger_size;
 
             let file = File::open(&plot.path).unwrap();
+            let mmap_file = Mmap::open(&file, Protection::Read).unwrap();
+            let buf = unsafe { mmap_file.as_slice() };
             for stagger in 0..stagger_count {
                 let stagger_offset = stagger as usize * HASH_CAP * HASH_SIZE * 2 *
                                      plot.stagger_size as usize +
                                      scoop_offset;
-                let mmap_stagger = Mmap::open_with_offset(&file,
-                                                          Protection::Read,
-                                                          stagger_offset,
-                                                          plot.stagger_size as usize * HASH_SIZE *
-                                                          2)
-                    .unwrap();
-                let buf = unsafe { mmap_stagger.as_slice() };
                 for nonce_in_stagger in 0..plot.stagger_size {
-                    (& mut hasher[32..(32 + HASH_SIZE * 2)])
-                        .write(&buf[nonce_in_stagger as usize * HASH_SIZE * 2..(nonce_in_stagger as usize + 1) *
-                                                                     HASH_SIZE *
-                                                                     2])
+                    let start_offset = stagger_offset + nonce_in_stagger as usize * HASH_SIZE * 2;
+                    let end_offset = stagger_offset +
+                                     (nonce_in_stagger as usize + 1) * HASH_SIZE * 2;
+                    (&mut hasher[32..(32 + HASH_SIZE * 2)])
+                        .write(&buf[start_offset..end_offset])
                         .unwrap();
                     let outhash = sph_shabal::shabal256(&hasher);
                     let mut hash_cur = Cursor::new(&outhash[0..8]);
