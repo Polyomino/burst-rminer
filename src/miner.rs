@@ -47,12 +47,13 @@ pub fn mine(signature_recv: Receiver<MinerWork>, plots: Vec<Plot>) {
         let mut best_account_id: Option<u64> = None;
         let mut best_hash: Option<u64> = None;
 
-        for plot in &plots {
+        'miner_run: for plot in &plots {
             // println!("read file: {:?}", &plot.path);
+            let plot_start_time = Instant::now();
+            let mut last_check_time = plot_start_time;
+            let mut nonce = plot.start_nonce;
 
             let scoop_offset = plot.stagger_size as usize * scoop_num as usize * HASH_SIZE * 2;
-
-            let mut nonce = plot.start_nonce;
 
             let stagger_count = plot.nonce_count / plot.stagger_size;
 
@@ -92,30 +93,31 @@ pub fn mine(signature_recv: Receiver<MinerWork>, plots: Vec<Plot>) {
                     nonce_count += 1;
                     nonce += 1;
                 }
-            }
+                let time_since_check = Instant::now() - last_check_time;
+                if time_since_check.as_secs() > 10 {
+                    last_check_time = Instant::now();
+                    if has_new_signature(&signature_recv, &mut next_work) {
+                        println!("read {} nonces in {:?}", nonce_count, time_since_check);
+                        break 'miner_run;
+                    }
 
-            if has_new_signature(&signature_recv, &mut next_work) {
-                println!("read {} nonces in {:?}",
-                         nonce_count,
-                         Instant::now() - start_time);
-                break;
-            }
-
-            if best_hash.unwrap() < deadline {
-                println!("found nonce {} Duration: {:?}",
-                         best_nonce.unwrap(),
-                         Duration::from_secs(best_hash.unwrap() / miner_work.base_target));
-                for i in 0..3 {
-                    match pool::submit_hash(best_nonce.unwrap(), best_account_id.unwrap()) {
-                        Ok(t) => {
-                            println!("try {} pool response: {}", i, t);
-                            break;
+                    if best_hash.unwrap() < deadline {
+                        println!("found nonce {} Duration: {:?}",
+                                 best_nonce.unwrap(),
+                                 Duration::from_secs(best_hash.unwrap() / miner_work.base_target));
+                        for i in 0..3 {
+                            match pool::submit_hash(best_nonce.unwrap(),
+                                                    best_account_id.unwrap()) {
+                                Ok(t) => {
+                                    println!("try {} pool response: {}", i, t);
+                                    break;
+                                }
+                                Err(e) => println!("try {} pool error: {:?}", i, e),
+                            };
                         }
-                        Err(e) => println!("try {} pool error: {:?}", i, e),
-                    };
+                        break 'miner_run;
+                    }
                 }
-
-                break;
             }
         }
         println!("finished reading in {:?}", Instant::now() - start_time);
