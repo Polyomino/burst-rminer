@@ -94,7 +94,7 @@ pub fn mine(signature_recv: Receiver<MinerWork>, plots: Vec<Plot>) {
                     nonce += 1;
                 }
                 let time_since_check = Instant::now() - last_check_time;
-                if time_since_check.as_secs() > 10 {
+                if time_since_check > Duration::from_millis(500) {
                     last_check_time = Instant::now();
                     if has_new_signature(&signature_recv, &mut next_work) {
                         println!("read {} nonces in {:?}", nonce_count, time_since_check);
