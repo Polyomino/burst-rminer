@@ -43,6 +43,7 @@ pub fn mine(signature_recv: Receiver<MinerWork>, plots: Vec<Plot>) {
         let deadline = miner_work.target_deadline * miner_work.base_target;
 
         let mut nonce_count = 0;
+        let mut last_submit: Option<u64> = None;
         let mut best_nonce: Option<u64> = None;
         let mut best_account_id: Option<u64> = None;
         let mut best_hash: Option<u64> = None;
@@ -101,7 +102,7 @@ pub fn mine(signature_recv: Receiver<MinerWork>, plots: Vec<Plot>) {
                         break 'miner_run;
                     }
 
-                    if best_hash.unwrap() < deadline {
+                    if best_hash.unwrap() < deadline && best_nonce != last_submit {
                         println!("found nonce {} Duration: {:?}",
                                  best_nonce.unwrap(),
                                  Duration::from_secs(best_hash.unwrap() / miner_work.base_target));
@@ -110,12 +111,12 @@ pub fn mine(signature_recv: Receiver<MinerWork>, plots: Vec<Plot>) {
                                                     best_account_id.unwrap()) {
                                 Ok(t) => {
                                     println!("try {} pool response: {}", i, t);
+                                    last_submit = best_nonce;
                                     break;
                                 }
                                 Err(e) => println!("try {} pool error: {:?}", i, e),
                             };
                         }
-                        break 'miner_run;
                     }
                 }
             }
