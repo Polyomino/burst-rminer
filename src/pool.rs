@@ -5,7 +5,6 @@ use constants::*;
 use rustc_serialize::json;
 use rustc_serialize::{Decodable, Decoder};
 use rustc_serialize::hex::{FromHex, FromHexError};
-use hyper;
 use hyper::Url;
 use hyper::client::Client;
 use hyper::error::Error as HyperError;
@@ -60,6 +59,7 @@ pub enum Error {
     Io(IoError),
     Parse(json::DecoderError),
     Subscriber(SendError<miner::MinerWork>),
+    MissingWork,
     Url,
 }
 
@@ -93,10 +93,12 @@ impl From<SendError<miner::MinerWork>> for Error {
     }
 }
 
+#[derive(Clone)]
 pub struct Pool {
     url: Url,
     mining_info: Arc<Mutex<Option<MiningInfo>>>,
     subscribers: Arc<Mutex<Vec<Sender<miner::MinerWork>>>>,
+    client: Arc<Mutex<Client>>,
 }
 
 impl Pool {
@@ -105,15 +107,12 @@ impl Pool {
             url: url,
             mining_info: Arc::new(Mutex::new(None)),
             subscribers: Arc::new(Mutex::new(miners)),
+            client: Arc::new(Mutex::new(Client::new())),
         };
-        let mining_info = pool.mining_info.clone();
-        let subscribers = pool.subscribers.clone();
-        let host_url = pool.url.clone();
+        let pool_ref = pool.clone();
         thread::spawn(move || {
-            let mining_info = mining_info;
-            let subscribers = subscribers;
             loop {
-                if let Err(e) = Pool::refresh(&mining_info, &subscribers, &host_url) {
+                if let Err(e) = pool_ref.refresh() {
                     println!("refresh pool: {:?}", e);
                 }
                 thread::sleep(Duration::from_secs(5));
@@ -122,9 +121,9 @@ impl Pool {
         pool
     }
 
-    fn query_pool(url: &Url) -> Result<MiningInfo, Error> {
-        let http_client = Client::new();
-        let mut query_url = url.clone();
+    fn query_pool(&self) -> Result<MiningInfo, Error> {
+        let ref http_client = self.client;
+        let mut query_url = self.url.clone();
         match query_url.path_segments_mut() {
             Ok(mut path_segments) => {
                 path_segments.pop_if_empty().push("burst");
@@ -132,84 +131,82 @@ impl Pool {
             Err(_) => return Err(Error::Url),
         };
         query_url.query_pairs_mut().append_pair("requestType", "getMiningInfo");
-        let mut res = try!(http_client.get(query_url).send());
-        assert_eq!(res.status, hyper::Ok);
         let mut response = String::new();
-        try!(res.read_to_string(&mut response));
+        {
+            let client_unwrapped = http_client.lock().unwrap();
+            let mut res = try!(client_unwrapped.get(query_url).send());
+            try!(res.read_to_string(&mut response));
+        }
         let mining_info = try!(json::decode(response.as_str()));
         Ok(mining_info)
     }
 
-    fn refresh(mining_info: &Arc<Mutex<Option<MiningInfo>>>,
-               subscribers: &Arc<Mutex<Vec<Sender<miner::MinerWork>>>>,
-               url: &Url)
-               -> Result<(), Error> {
-        let new_mining_info = try!(Pool::query_pool(url));
-        let new_sig = new_mining_info.generation_signature.clone();
-        match mining_info.lock() {
+    fn refresh(&self) -> Result<(), Error> {
+        let new_mining_info = try!(self.query_pool());
+        match self.mining_info.lock() {
             Err(_) => {
                 panic!("Mutex holding the pool state was poisoned. The main thread may have \
                         panicked.")
             }
             Ok(mut mining_info_guard) => {
-                *mining_info_guard = match mining_info_guard.clone() {
-                    None => {
-                        try!(Pool::notify_subscribers(&new_mining_info, subscribers));
-                        Some(new_mining_info)
+                if let Some(ref old_mining_info) = *mining_info_guard {
+                    if old_mining_info.generation_signature ==
+                       new_mining_info.generation_signature {
+                        return Ok(()); //no update
                     }
-                    Some(ref existing_mining_info) if existing_mining_info.generation_signature !=
-                                                      new_sig => {
-                        try!(Pool::notify_subscribers(&new_mining_info, subscribers));
-                        Some(new_mining_info)
-                    }
-                    Some(existing_mining_info) => Some(existing_mining_info),
                 }
+                *mining_info_guard = Some(new_mining_info);
+                try!(self.notify_subscribers());
             }
         }
         Ok(())
     }
 
-    fn notify_subscribers(mining_info: &MiningInfo,
-                          subscribers: &Arc<Mutex<Vec<Sender<miner::MinerWork>>>>)
-                          -> Result<(), Error> {
-        let miner_work = try!(Pool::get_miner_work(mining_info));
-        for sender in subscribers.lock().unwrap().deref() {
+    fn notify_subscribers(&self) -> Result<(), Error> {
+        let miner_work = try!(self.get_miner_work());
+        for sender in self.subscribers.lock().unwrap().deref() {
             try!(sender.send(miner_work.clone()))
         }
         Ok(())
     }
 
-    fn get_miner_work(mining_info: &MiningInfo) -> Result<miner::MinerWork, Error> {
-        let sig = try!(mining_info.generation_signature.from_hex());
+    fn get_miner_work(&self) -> Result<miner::MinerWork, Error> {
+        let mining_info_guard = self.mining_info.lock().unwrap();
+        if let Some(ref mining_info) = *mining_info_guard {
+            let sig = try!(mining_info.generation_signature.from_hex());
 
-        let mut height_vec = vec![];
-        try!(height_vec.write_u64::<BigEndian>(mining_info.height));
-        let height = &height_vec[..];
-        let mut scoop_prefix: [u8; 40] = [0; 40];
+            let mut height_vec = vec![];
+            try!(height_vec.write_u64::<BigEndian>(mining_info.height));
+            let height = &height_vec[..];
+            let mut scoop_prefix: [u8; 40] = [0; 40];
 
-        try!((&mut scoop_prefix[0..32]).write(&sig[..]));
-        try!((&mut scoop_prefix[32..40]).write(height));
-        // println!("scoop prefix:    {:?}", scoop_prefix.to_hex());
+            try!((&mut scoop_prefix[0..32]).write(&sig[..]));
+            try!((&mut scoop_prefix[32..40]).write(height));
+            // println!("scoop prefix:    {:?}", scoop_prefix.to_hex());
 
-        let scoop_prefix_shabal = sph_shabal::shabal256(&scoop_prefix);
-        // println!("shabaled prefix: {:?}", scoop_prefix_shabal.to_hex());
+            let scoop_prefix_shabal = sph_shabal::shabal256(&scoop_prefix);
+            // println!("shabaled prefix: {:?}", scoop_prefix_shabal.to_hex());
 
-        let scoop_check_arr = &scoop_prefix_shabal[30..];
-        let mut cur = Cursor::new(scoop_check_arr);
-        let scoop_num: u16 = cur.read_u16::<BigEndian>().unwrap() % 4096;
-        // println!("scoop num:       {:?}", scoop_num);
+            let scoop_check_arr = &scoop_prefix_shabal[30..];
+            let mut cur = Cursor::new(scoop_check_arr);
+            let scoop_num: u16 = cur.read_u16::<BigEndian>().unwrap() % 4096;
+            // println!("scoop num:       {:?}", scoop_num);
 
-        let mut hasher: [u8; 32 + HASH_SIZE * 2] = [0; 32 + HASH_SIZE * 2];
+            let mut hasher: [u8; 32 + HASH_SIZE * 2] = [0; 32 + HASH_SIZE * 2];
 
-        try!((&mut hasher[0..32]).write(&sig[..]));
+            try!((&mut hasher[0..32]).write(&sig[..]));
 
-        Ok(miner::MinerWork {
-            hasher: hasher,
-            scoop_num: scoop_num,
-            height: mining_info.height,
-            target_deadline: mining_info.target_deadline,
-            base_target: mining_info.base_target,
-        })
+            Ok(miner::MinerWork {
+                hasher: hasher,
+                scoop_num: scoop_num,
+                height: mining_info.height,
+                target_deadline: mining_info.target_deadline,
+                base_target: mining_info.base_target,
+            })
+        }
+        else {
+            Err(Error::MissingWork)
+        }
     }
 }
 
@@ -222,7 +219,7 @@ pub fn submit_hash(nonce: u64, account_id: u64) -> Result<String, Error> {
     let client = Client::new();
     let mut response = String::new();
     let mut res = try!(client.get(request.into_url().unwrap()).send());
-    
+
     // assert_eq!(res.status, hyper::Ok);
     res.read_to_string(&mut response).unwrap();
     return Ok(response);
