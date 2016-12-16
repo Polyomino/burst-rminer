@@ -1,7 +1,8 @@
-use byteorder::{ReadBytesExt, LittleEndian};
+use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian, BigEndian};
 use constants::*;
 use plots::Plot;
 use pool;
+use rustc_serialize::hex::FromHex;
 use std::cmp::Ordering;
 use std::fs::File;
 use std::io::{Cursor, Write};
@@ -22,6 +23,42 @@ pub struct MinerWork {
 impl Clone for MinerWork {
     fn clone(&self) -> MinerWork {
         *self
+    }
+}
+
+impl MinerWork {
+    pub fn from_mining_info(mining_info: pool::MiningInfo) -> Result<MinerWork, pool::Error> {
+        let sig = try!(mining_info.generation_signature.from_hex());
+
+        let mut height_vec = vec![];
+        try!(height_vec.write_u64::<BigEndian>(mining_info.height));
+        let height = &height_vec[..];
+        let mut scoop_prefix: [u8; 40] = [0; 40];
+
+        try!((&mut scoop_prefix[0..32]).write(&sig[..]));
+        try!((&mut scoop_prefix[32..40]).write(height));
+        // println!("scoop prefix:    {:?}", scoop_prefix.to_hex());
+
+        let scoop_prefix_shabal = sph_shabal::shabal256(&scoop_prefix);
+        // println!("shabaled prefix: {:?}", scoop_prefix_shabal.to_hex());
+
+        let scoop_check_arr = &scoop_prefix_shabal[30..];
+        let mut cur = Cursor::new(scoop_check_arr);
+        let scoop_num: u16 = cur.read_u16::<BigEndian>().unwrap() % 4096;
+        // println!("scoop num:       {:?}", scoop_num);
+
+        let mut hasher: [u8; 32 + HASH_SIZE * 2] = [0; 32 + HASH_SIZE * 2];
+
+        try!((&mut hasher[0..32]).write(&sig[..]));
+
+        Ok(MinerWork {
+            hasher: hasher,
+            scoop_num: scoop_num,
+            height: mining_info.height,
+            target_deadline: mining_info.target_deadline,
+            base_target: mining_info.base_target,
+        })
+
     }
 }
 
@@ -107,8 +144,7 @@ pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Pl
                                  best_nonce.unwrap(),
                                  Duration::from_secs(best_hash.unwrap() / miner_work.base_target));
                         for i in 0..3 {
-                            match pool.submit_hash(best_nonce.unwrap(),
-                                                    best_account_id.unwrap()) {
+                            match pool.submit_hash(best_nonce.unwrap(), best_account_id.unwrap()) {
                                 Ok(t) => {
                                     println!("try {} pool response: {}", i, t);
                                     last_submit = best_nonce;

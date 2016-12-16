@@ -1,10 +1,8 @@
 extern crate rustc_serialize;
 
-use byteorder::*;
-use constants::*;
 use rustc_serialize::json;
 use rustc_serialize::{Decodable, Decoder};
-use rustc_serialize::hex::{FromHex, FromHexError};
+use rustc_serialize::hex::FromHexError;
 use hyper::Url;
 use hyper::client::Client;
 use hyper::error::Error as HyperError;
@@ -12,18 +10,17 @@ use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Sender, SendError};
 use std::thread;
 use std::time::Duration;
-use std::io::{Cursor, Read, Write, Error as IoError};
+use std::io::{Read, Error as IoError};
 use std::ops::Deref;
-use sph_shabal;
 use miner;
 
 #[derive(Debug, Clone)]
-struct MiningInfo {
+pub struct MiningInfo {
     pub generation_signature: String,
     pub base_target: u64,
     request_processing_time: i64,
-    height: u64,
-    target_deadline: u64,
+    pub height: u64,
+    pub target_deadline: u64,
 }
 
 impl Decodable for MiningInfo {
@@ -176,44 +173,11 @@ impl Pool {
     }
 
     fn notify_subscribers(&self, mining_info: MiningInfo) -> Result<(), Error> {
-        let miner_work = try!(Pool::get_miner_work(mining_info));
+        let miner_work = try!(miner::MinerWork::from_mining_info(mining_info));
         for sender in self.subscribers.lock().unwrap().deref() {
             try!(sender.send(miner_work.clone()))
         }
         Ok(())
-    }
-
-    fn get_miner_work(mining_info: MiningInfo) -> Result<miner::MinerWork, Error> {
-        let sig = try!(mining_info.generation_signature.from_hex());
-
-        let mut height_vec = vec![];
-        try!(height_vec.write_u64::<BigEndian>(mining_info.height));
-        let height = &height_vec[..];
-        let mut scoop_prefix: [u8; 40] = [0; 40];
-
-        try!((&mut scoop_prefix[0..32]).write(&sig[..]));
-        try!((&mut scoop_prefix[32..40]).write(height));
-        // println!("scoop prefix:    {:?}", scoop_prefix.to_hex());
-
-        let scoop_prefix_shabal = sph_shabal::shabal256(&scoop_prefix);
-        // println!("shabaled prefix: {:?}", scoop_prefix_shabal.to_hex());
-
-        let scoop_check_arr = &scoop_prefix_shabal[30..];
-        let mut cur = Cursor::new(scoop_check_arr);
-        let scoop_num: u16 = cur.read_u16::<BigEndian>().unwrap() % 4096;
-        // println!("scoop num:       {:?}", scoop_num);
-
-        let mut hasher: [u8; 32 + HASH_SIZE * 2] = [0; 32 + HASH_SIZE * 2];
-
-        try!((&mut hasher[0..32]).write(&sig[..]));
-
-        Ok(miner::MinerWork {
-            hasher: hasher,
-            scoop_num: scoop_num,
-            height: mining_info.height,
-            target_deadline: mining_info.target_deadline,
-            base_target: mining_info.base_target,
-        })
     }
 
     pub fn submit_hash(&self, nonce: u64, account_id: u64) -> Result<String, Error> {
