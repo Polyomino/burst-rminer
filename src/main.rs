@@ -56,21 +56,22 @@ fn main() {
 
     let plot_folders = plots::get_plots(miner_config.plot_folders.unwrap());
 
-    let mut miners = Vec::new();
-    let mut senders = Vec::new();
+    let pool = Pool::from_url(Url::parse(&miner_config.pool_url.unwrap()).unwrap());
+
     for folder in &plot_folders.folders {
         let plots = folder.plots.clone();
+        let pool = pool.clone();
 
         let (signature_sender, signature_recv) = channel();
-        miners.push(thread::spawn::<_, i32>(move || {
-            miner::mine(signature_recv, plots);
-            0
-        }));
-        senders.push(signature_sender);
-    }
+        pool.add_subscriber(signature_sender).unwrap();
 
-    Pool::new(Url::parse(&miner_config.pool_url.unwrap()).unwrap(),
-              senders);
+        thread::spawn::<_, i32>(move || {
+            miner::mine(pool, signature_recv, plots);
+            0
+        });
+    }
+    pool.start();
+
     loop {
         thread::sleep(Duration::from_secs(10));
     }

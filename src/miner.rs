@@ -25,7 +25,7 @@ impl Clone for MinerWork {
     }
 }
 
-pub fn mine(signature_recv: Receiver<MinerWork>, plots: Vec<Plot>) {
+pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Plot>) {
 
     let mut next_work: Option<MinerWork> = None;
 
@@ -107,7 +107,7 @@ pub fn mine(signature_recv: Receiver<MinerWork>, plots: Vec<Plot>) {
                                  best_nonce.unwrap(),
                                  Duration::from_secs(best_hash.unwrap() / miner_work.base_target));
                         for i in 0..3 {
-                            match pool::submit_hash(best_nonce.unwrap(),
+                            match pool.submit_hash(best_nonce.unwrap(),
                                                     best_account_id.unwrap()) {
                                 Ok(t) => {
                                     println!("try {} pool response: {}", i, t);
