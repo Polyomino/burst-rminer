@@ -117,15 +117,14 @@ pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Pl
                     let mut hash_cur = Cursor::new(&outhash[0..8]);
                     let test_num = hash_cur.read_u64::<LittleEndian>().unwrap();
                     // println!("hash: {} nonce: {}", test_num, nonce);
-                    best_hash = match (best_hash, Some(test_num).cmp(&best_hash)) {
-                        (None, _) |
-                        (Some(_), Ordering::Less) => {
+                    match best_hash {
+                        Some(existing_hash) if existing_hash < test_num => {}
+                        _ => {
+                            best_hash = Some(test_num);
                             best_nonce = Some(nonce);
-                            best_account_id = Some(plot.account_id);
-                            Some(test_num)
+                            best_account_id = Some(plot.account_id)
                         }
-                        _ => best_hash,
-                    };
+                    }
 
                     // println!("{:?}", best_hash);
                     nonce_count += 1;
