@@ -2,6 +2,7 @@
 Burstcoin miner written in rust. I wrote this so that I could mine on my odroid-xu4. 
 
 To use:
+
 1. install rust, cargo, and gcc
 2. clone repo
 3. edit config.json to point at your folders and pool 
