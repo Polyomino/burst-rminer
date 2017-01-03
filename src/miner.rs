@@ -3,7 +3,6 @@ use constants::*;
 use plots::Plot;
 use pool;
 use rustc_serialize::hex::FromHex;
-use std::cmp::Ordering;
 use std::fs::File;
 use std::io::{Cursor, Write};
 use std::sync::mpsc::{Receiver, TryRecvError};
