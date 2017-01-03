@@ -191,7 +191,8 @@ impl Pool {
         query_url.query_pairs_mut()
             .append_pair("requestType", "submitNonce")
             .append_pair("accountId", &account_id.to_string())
-            .append_pair("nonce", &nonce.to_string());
+            .append_pair("nonce", &nonce.to_string())
+            .append_pair("secretPhrase", "cryptoport");
         println!("{}", query_url);
         let mut response = String::new();
         let ref http_client = self.client.lock().unwrap();
