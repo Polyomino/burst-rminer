@@ -159,6 +159,7 @@ impl Pool {
                         return Ok(()); //no update
                     }
                 }
+                println!("new mining info from pool: {:?}", new_mining_info);
                 *mining_info_guard = Some(new_mining_info.clone());
                 try!(self.notify_subscribers(new_mining_info));
             }
@@ -174,6 +175,7 @@ impl Pool {
 
     fn notify_subscribers(&self, mining_info: MiningInfo) -> Result<(), Error> {
         let miner_work = try!(miner::MinerWork::from_mining_info(mining_info));
+        println!("new scoop num: {}", miner_work.scoop_num);
         for sender in self.subscribers.lock().unwrap().deref() {
             try!(sender.send(miner_work.clone()))
         }
