@@ -117,11 +117,11 @@ pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Pl
                     let test_num = hash_cur.read_u64::<LittleEndian>().unwrap();
                     // println!("hash: {} nonce: {}", test_num, nonce);
                     match best_hash {
-                        Some(existing_hash) if existing_hash < test_num => {}
+                        Some(existing_hash) if existing_hash <= test_num => {}
                         _ => {
                             best_hash = Some(test_num);
                             best_nonce = Some(nonce);
-                            best_account_id = Some(plot.account_id)
+                            best_account_id = Some(plot.account_id);
                         }
                     }
 
