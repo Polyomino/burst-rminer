@@ -110,12 +110,12 @@ pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Pl
 
                 let map_addr;
                 let buf: &[u8] = unsafe {
-                    map_addr = libc::mmap(ptr::null_mut(),
-                                          aligned_len,
-                                          libc::PROT_READ,
-                                          libc::MAP_PRIVATE,
-                                          file.as_raw_fd(),
-                                          aligned_offset);
+                    map_addr = libc::mmap64(ptr::null_mut(),
+                                            aligned_len,
+                                            libc::PROT_READ,
+                                            libc::MAP_PRIVATE,
+                                            file.as_raw_fd(),
+                                            aligned_offset);
 
                     slice::from_raw_parts(map_addr.offset(alignment as isize) as *const u8, map_len)
                 };
@@ -190,5 +190,5 @@ fn has_new_signature(recv: &Receiver<MinerWork>, next_work: &mut Option<MinerWor
 }
 
 fn page_size() -> i64 {
-    unsafe { libc::sysconf(libc::_SC_PAGESIZE) }
+    unsafe { libc::sysconf(libc::_SC_PAGESIZE) as i64 }
 }
