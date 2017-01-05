@@ -1,3 +1,5 @@
+extern crate libc;
+
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian, BigEndian};
 use constants::*;
 use plots::Plot;
@@ -5,10 +7,11 @@ use pool;
 use rustc_serialize::hex::FromHex;
 use std::fs::File;
 use std::io::{Cursor, Write};
+use std::os::unix::io::AsRawFd;
+use std::{ptr, slice};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 use sph_shabal;
-use memmap::{Mmap, Protection};
 
 #[derive(Copy)]
 pub struct MinerWork {
@@ -90,23 +93,37 @@ pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Pl
             let mut last_check_time = plot_start_time;
             let mut nonce = plot.start_nonce;
 
-            let scoop_offset = plot.stagger_size as usize * scoop_num as usize * HASH_SIZE * 2;
+            let scoop_offset = plot.stagger_size as i64 * scoop_num as i64 * HASH_SIZE as i64 * 2;
 
             let stagger_count = plot.nonce_count / plot.stagger_size;
 
             let file = File::open(&plot.path).unwrap();
             for stagger in 0..stagger_count {
-                let stagger_offset = stagger as usize * HASH_CAP * HASH_SIZE * 2 *
-                                     plot.stagger_size as usize +
-                                     scoop_offset;
-                let mmap_stagger = Mmap::open_with_offset(&file,
-                                                          Protection::Read,
-                                                          stagger_offset,
-                                                          plot.stagger_size as usize * HASH_SIZE *
-                                                          2)
-                    .unwrap();
-                let buf = unsafe { mmap_stagger.as_slice() };
+                let stagger_offset = (stagger as i64 * HASH_CAP as i64 * HASH_SIZE as i64 * 2 *
+                                      plot.stagger_size as i64 +
+                                      scoop_offset) as i64;
+                let map_len = plot.stagger_size as usize * HASH_SIZE * 2;
+                let alignment = stagger_offset % page_size();
+                let aligned_offset = stagger_offset - alignment;
+                let aligned_len = map_len + alignment as usize;
+                println!("before create mmap");
+                let map_addr;
+                let buf: &[u8] = unsafe {
+                    map_addr = libc::mmap(ptr::null_mut(),
+                                          aligned_len,
+                                          libc::PROT_READ,
+                                          libc::MAP_PRIVATE,
+                                          file.as_raw_fd(),
+                                          aligned_offset);
+
+                    println!("map addr: {:?}", map_addr);
+                    slice::from_raw_parts(map_addr.offset(alignment as isize) as *const u8, map_len)
+                };
+
+                println!("map addr: {:?}", map_addr);
+
                 for nonce_in_stagger in 0..plot.stagger_size {
+                    println!("nonce: {}", nonce);
                     (& mut hasher[32..(32 + HASH_SIZE * 2)])
                         .write(&buf[nonce_in_stagger as usize * HASH_SIZE * 2..(nonce_in_stagger as usize + 1) *
                                                                      HASH_SIZE *
@@ -129,15 +146,17 @@ pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Pl
                     nonce_count += 1;
                     nonce += 1;
                 }
+                unsafe {libc::munmap(map_addr, map_len)};
+
                 let time_since_check = Instant::now() - last_check_time;
-                if time_since_check > Duration::from_millis(500) {
+                // if time_since_check > Duration::from_millis(500) {
                     last_check_time = Instant::now();
                     if has_new_signature(&signature_recv, &mut next_work) {
                         println!("read {} nonces in {:?}", nonce_count, time_since_check);
                         break 'miner_run;
                     }
 
-                    if best_hash.unwrap() < deadline && best_nonce != last_submit {
+                    if /*best_hash.unwrap() < deadline &&*/ best_nonce != last_submit {
                         println!("found nonce {} Duration: {:?}",
                                  best_nonce.unwrap(),
                                  Duration::from_secs(best_hash.unwrap() / miner_work.base_target));
@@ -152,7 +171,7 @@ pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Pl
                             };
                         }
                     }
-                }
+                // }
             }
         }
         println!("finished reading in {:?}", Instant::now() - start_time);
@@ -171,4 +190,8 @@ fn has_new_signature(recv: &Receiver<MinerWork>, next_work: &mut Option<MinerWor
         }
         Err(TryRecvError::Disconnected) => panic!("signature sender disconnected"),
     };
+}
+
+fn page_size() -> i64 {
+    unsafe { libc::sysconf(libc::_SC_PAGESIZE) }
 }
