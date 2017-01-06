@@ -64,6 +64,11 @@ impl MinerWork {
     }
 }
 
+#[cfg(target_arch = "arm")]
+use libc::mmap64 as mmap;
+#[cfg(target_os = "macos")]
+use libc::mmap;
+
 pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Plot>) {
 
     let mut next_work: Option<MinerWork> = None;
@@ -110,7 +115,7 @@ pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Pl
 
                 let map_addr;
                 let buf: &[u8] = unsafe {
-                    map_addr = libc::mmap64(ptr::null_mut(),
+                    map_addr = mmap(ptr::null_mut(),
                                             aligned_len,
                                             libc::PROT_READ,
                                             libc::MAP_PRIVATE,
