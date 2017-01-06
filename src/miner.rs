@@ -114,7 +114,7 @@ pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Pl
                 let alignment = stagger_offset % page_size();
                 let aligned_offset = stagger_offset - alignment;
                 let aligned_len = map_len + alignment as usize;
-                if (map_len + stagger_offset) as u64 > file_len {
+                if map_len as u64 + stagger_offset as u64 > file_len {
                     println!("past end of file {:?}", &plot.path);
                     break;
                 }
