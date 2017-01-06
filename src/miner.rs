@@ -6,7 +6,7 @@ use plots::Plot;
 use pool;
 use rustc_serialize::hex::FromHex;
 use std::fs::File;
-use std::io::{Cursor, Write};
+use std::io::{Cursor, Error, Write};
 use std::os::unix::io::AsRawFd;
 use std::{ptr, slice};
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -116,12 +116,16 @@ pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Pl
                 let map_addr;
                 let buf: &[u8] = unsafe {
                     map_addr = mmap(ptr::null_mut(),
-                                            aligned_len,
-                                            libc::PROT_READ,
-                                            libc::MAP_PRIVATE,
-                                            file.as_raw_fd(),
-                                            aligned_offset);
-
+                                    aligned_len,
+                                    libc::PROT_READ,
+                                    libc::MAP_PRIVATE,
+                                    file.as_raw_fd(),
+                                    aligned_offset);
+                    if map_addr == libc::MAP_FAILED {
+                        println!("map failed: {}",
+                                 Error::last_os_error().raw_os_error().unwrap_or(-1));
+                        continue;
+                    }
                     slice::from_raw_parts(map_addr.offset(alignment as isize) as *const u8, map_len)
                 };
 
