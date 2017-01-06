@@ -5,7 +5,7 @@ use constants::*;
 use plots::Plot;
 use pool;
 use rustc_serialize::hex::FromHex;
-use std::fs::File;
+use std::fs::{File, metadata};
 use std::io::{Cursor, Error, Write};
 use std::os::unix::io::AsRawFd;
 use std::{ptr, slice};
@@ -105,6 +105,8 @@ pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Pl
             let map_len = plot.stagger_size as usize * HASH_SIZE * 2;
 
             let file = File::open(&plot.path).unwrap();
+            let file_len = metadata(&plot.path).unwrap().len();
+
             for stagger in 0..stagger_count {
                 let stagger_offset = (stagger as i64 * HASH_CAP as i64 * HASH_SIZE as i64 * 2 *
                                       plot.stagger_size as i64 +
@@ -112,7 +114,11 @@ pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Pl
                 let alignment = stagger_offset % page_size();
                 let aligned_offset = stagger_offset - alignment;
                 let aligned_len = map_len + alignment as usize;
-
+                if (stagger_offset + stagger_offset) as u64 > file_len {
+                    println!("past end of file {:?}", &plot.path);
+                    break;
+                }
+                
                 let map_addr;
                 let buf: &[u8] = unsafe {
                     map_addr = mmap(ptr::null_mut(),
