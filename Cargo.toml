@@ -8,6 +8,7 @@ build = "build.rs"
 gcc = "0.3"
 
 [dependencies]
+memmap = {git = "https://github.com/Polyomino/memmap-rs"}
 byteorder = "0.5.3"
 glob = "0.2.11"
 libc = "0.2.17"

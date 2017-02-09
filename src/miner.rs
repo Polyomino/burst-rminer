@@ -1,4 +1,4 @@
-extern crate libc;
+extern crate memmap;
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian, BigEndian};
 use constants::*;
@@ -6,12 +6,11 @@ use plots::Plot;
 use pool;
 use rustc_serialize::hex::FromHex;
 use std::fs::{File, metadata};
-use std::io::{Cursor, Error, Write};
-use std::os::unix::io::AsRawFd;
-use std::{ptr, slice};
+use std::io::{Cursor, Write};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 use sph_shabal;
+use self::memmap::{Mmap, Protection};
 
 #[derive(Copy)]
 pub struct MinerWork {
@@ -64,11 +63,6 @@ impl MinerWork {
     }
 }
 
-#[cfg(target_arch = "arm")]
-use libc::mmap64 as mmap;
-#[cfg(target_os = "macos")]
-use libc::mmap;
-
 pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Plot>) {
 
     let mut next_work: Option<MinerWork> = None;
@@ -108,32 +102,19 @@ pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Pl
             let file_len = metadata(&plot.path).unwrap().len();
 
             for stagger in 0..stagger_count {
-                let stagger_offset = (stagger as i64 * HASH_CAP as i64 * HASH_SIZE as i64 * 2 *
-                                      plot.stagger_size as i64 +
-                                      scoop_offset) as i64;
-                let alignment = stagger_offset % page_size();
-                let aligned_offset = stagger_offset - alignment;
-                let aligned_len = map_len + alignment as usize;
+                let stagger_offset = stagger as i64 * HASH_CAP as i64 * HASH_SIZE as i64 * 2 *
+                                     plot.stagger_size as i64 +
+                                     scoop_offset;
                 if map_len as u64 + stagger_offset as u64 > file_len {
                     println!("past end of file {:?}", &plot.path);
                     break;
                 }
-                
-                let map_addr;
-                let buf: &[u8] = unsafe {
-                    map_addr = mmap(ptr::null_mut(),
-                                    aligned_len,
-                                    libc::PROT_READ,
-                                    libc::MAP_PRIVATE,
-                                    file.as_raw_fd(),
-                                    aligned_offset);
-                    if map_addr == libc::MAP_FAILED {
-                        println!("map failed: {}",
-                                 Error::last_os_error().raw_os_error().unwrap_or(-1));
-                        continue;
-                    }
-                    slice::from_raw_parts(map_addr.offset(alignment as isize) as *const u8, map_len)
-                };
+                let mmap_stagger = Mmap::open_with_offset(&file,
+                                                          Protection::Read,
+                                                          stagger_offset,
+                                                          map_len)
+                    .unwrap();
+                let buf = unsafe { mmap_stagger.as_slice() };
 
                 for nonce_in_stagger in 0..plot.stagger_size {
                     (& mut hasher[32..(32 + HASH_SIZE * 2)])
@@ -158,7 +139,6 @@ pub fn mine(pool: pool::Pool, signature_recv: Receiver<MinerWork>, plots: Vec<Pl
                     nonce_count += 1;
                     nonce += 1;
                 }
-                unsafe { libc::munmap(map_addr, map_len) };
 
                 let time_since_check = Instant::now() - last_check_time;
                 if time_since_check > Duration::from_millis(500) {
@@ -202,8 +182,4 @@ fn has_new_signature(recv: &Receiver<MinerWork>, next_work: &mut Option<MinerWor
         }
         Err(TryRecvError::Disconnected) => panic!("signature sender disconnected"),
     };
-}
-
-fn page_size() -> i64 {
-    unsafe { libc::sysconf(libc::_SC_PAGESIZE) as i64 }
 }
