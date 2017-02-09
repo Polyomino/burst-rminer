@@ -19,6 +19,3 @@ num-bigint = "0.1.35"
 [dependencies.hyper]
 version = "0.9.11"
 default-features = false
-
-[profile.release]
-debug = true
